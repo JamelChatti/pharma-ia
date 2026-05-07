@@ -1,0 +1,263 @@
+{
+  "info": {
+    "_postman_id": "d34f6d63-6df0-4d8f-9a13-63f73db3fc31",
+    "name": "Pharma IA Local API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1) Auth Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201/200', function () {",
+              "  pm.expect([200, 201]).to.include(pm.response.code);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json.accessToken) {",
+              "  pm.collectionVariables.set('token', json.accessToken);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "auth",
+            "login"
+          ]
+        }
+      }
+    },
+    {
+      "name": "2) Get Sale By Id",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json.id) {",
+              "  pm.collectionVariables.set('saleId', json.id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/sales/{{saleId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sales",
+            "{{saleId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "3) Create Return",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201/200', function () {",
+              "  pm.expect([200, 201]).to.include(pm.response.code);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json.id) {",
+              "  pm.collectionVariables.set('returnId', json.id);",
+              "}",
+              "if (json.status) {",
+              "  pm.collectionVariables.set('returnStatus', json.status);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"lines\": [\n    {\n      \"saleLineId\": \"{{saleLineId}}\",\n      \"qty\": 1,\n      \"condition\": \"resellable\"\n    }\n  ],\n  \"reason\": \"Test retour Postman\",\n  \"refundMethod\": \"cash\",\n  \"cashAccountId\": \"{{cashAccountId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/sales/{{saleId}}/returns",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sales",
+            "{{saleId}}",
+            "returns"
+          ]
+        }
+      }
+    },
+    {
+      "name": "4) Approve Return (if pending_approval)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"decision\": \"approved\",\n  \"note\": \"Validation manager via Postman\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/sales/returns/{{returnId}}/approve",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sales",
+            "returns",
+            "{{returnId}}",
+            "approve"
+          ]
+        }
+      }
+    },
+    {
+      "name": "5) Refund Return",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"method\": \"cash\",\n  \"cashAccountId\": \"{{cashAccountId}}\",\n  \"reference\": \"PM-REFUND-001\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/sales/returns/{{returnId}}/refund",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sales",
+            "returns",
+            "{{returnId}}",
+            "refund"
+          ]
+        }
+      }
+    },
+    {
+      "name": "6) Apply Customer Credit",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"saleId\": \"{{saleId}}\",\n  \"amount\": 2.000\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/sales/credits/apply",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "sales",
+            "credits",
+            "apply"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "saleId",
+      "value": "e6f0e8b1-6779-42b1-af34-a05a80fb1401"
+    },
+    {
+      "key": "saleLineId",
+      "value": "6ae9f79a-425a-4c00-b7b4-b0697bdcf38b"
+    },
+    {
+      "key": "cashAccountId",
+      "value": "0be97465-2202-4636-86e0-186ac5d30a03"
+    },
+    {
+      "key": "returnId",
+      "value": ""
+    },
+    {
+      "key": "returnStatus",
+      "value": ""
+    }
+  ]
+}

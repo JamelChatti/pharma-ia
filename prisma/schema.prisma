@@ -1,0 +1,860 @@
+// Pharmacie Tunisie — modèle données v1 (PostgreSQL + Prisma 7)
+// URL DB : prisma.config.ts / env DATABASE_URL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  active
+  inactive
+}
+
+enum SaleStatus {
+  draft
+  completed
+  cancelled
+  returned_partial
+  returned_full
+}
+
+enum PaymentStatus {
+  unpaid
+  partial
+  paid
+}
+
+enum SaleReturnStatus {
+  pending_approval
+  approved
+  rejected
+  refunded
+}
+
+enum RefundMethod {
+  cash
+  bank_transfer
+  card_reversal
+  customer_credit
+}
+
+enum ReturnCondition {
+  resellable
+  damaged
+  expired
+}
+
+enum StockMovementType {
+  in
+  out
+  adjust
+  transfer_in
+  transfer_out
+}
+
+enum FinanceAccountType {
+  cash
+  bank
+}
+
+enum FinanceTxnType {
+  in
+  out
+  transfer
+}
+
+enum TaxPeriodStatus {
+  open
+  locked
+  filed
+}
+
+enum VatDeclarationStatus {
+  draft
+  validated
+  submitted
+}
+
+// ─── Multi-tenant & organisation ─────────────────────────────────────
+
+model Tenant {
+  id         String     @id @default(uuid())
+  name       String
+  plan       String     @default("starter")
+  status     String     @default("active")
+  createdAt  DateTime   @default(now())
+  pharmacies Pharmacy[]
+}
+
+model Pharmacy {
+  id        String    @id @default(uuid())
+  tenantId  String
+  legalName String
+  tradeName String?
+  taxId     String?
+  address   String?
+  phone     String?
+  email     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users      User[]
+  setting    PharmacySetting?
+  categories Category[]
+  taxRates   TaxRate[]
+  suppliers  Supplier[]
+  customers  Customer[]
+  products   Product[]
+  warehouses Warehouse[]
+  stockMovements StockMovement[]
+  purchaseOrders PurchaseOrder[]
+  purchaseInvoices PurchaseInvoice[]
+  registers  Register[]
+  sales      Sale[]
+  saleReturns SaleReturn[]
+  customerCredits CustomerCredit[]
+  cashAccounts CashAccount[]
+  bankAccounts BankAccount[]
+  financeTransactions FinanceTransaction[]
+  chartOfAccounts ChartOfAccounts[]
+  journalEntries JournalEntry[]
+  taxPeriods TaxPeriod[]
+  vatDeclarations VatDeclaration[]
+  backupProfiles BackupProfile[]
+  syncJobs SyncJob[]
+  auditLogs AuditLog[]
+
+  @@index([tenantId])
+}
+
+model PharmacySetting {
+  id                      String   @id @default(uuid())
+  pharmacyId              String   @unique
+  defaultReturnWindowDays Int      @default(7)
+  requireManagerApprovalOver Decimal @default(200) @db.Decimal(14, 3)
+  allowExpiredReturn      Boolean  @default(false)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+}
+
+// ─── RBAC ──────────────────────────────────────────────────────────────
+
+model User {
+  id           String      @id @default(uuid())
+  pharmacyId   String
+  fullName     String
+  phone        String?
+  email        String?
+  passwordHash String
+  status       UserStatus @default(active)
+  lastLoginAt DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  pharmacy Pharmacy   @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  userRoles UserRole[]
+
+  stockMovementsAsMover StockMovement[] @relation("StockMovementMovedBy")
+  purchasesCreated    PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
+  saleCashier         Sale[]          @relation("SaleCashier")
+  saleReturnsCreated  SaleReturn[]    @relation("SaleReturnCreatedBy")
+  financeTransactions FinanceTransaction[] @relation("FinanceTxnCreator")
+  auditLogs AuditLog[]
+  approvals SaleReturn[] @relation("SaleReturnApprovedBy")
+  saleReturnsRefunded SaleReturn[]    @relation("SaleReturnRefundedBy")
+
+  @@unique([pharmacyId, email])
+  @@index([pharmacyId])
+}
+
+model Role {
+  id               String           @id @default(uuid())
+  code             String           @unique
+  label            String
+  userRoles        UserRole[]
+  rolePermissions  RolePermission[]
+}
+
+model Permission {
+  id               String           @id @default(uuid())
+  code             String           @unique
+  label            String
+  module           String
+  rolePermissions  RolePermission[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+// ─── Référentiels ──────────────────────────────────────────────────────
+
+model Category {
+  id         String    @id @default(uuid())
+  pharmacyId String
+  name       String
+  parentId   String?
+
+  pharmacy Pharmacy   @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  parent   Category?  @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryChildren")
+  products Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pharmacyId, name])
+}
+
+model TaxRate {
+  id         String   @id @default(uuid())
+  pharmacyId String
+  name       String
+  rate       Decimal  @db.Decimal(5, 2)
+  isDefault  Boolean  @default(false)
+
+  pharmacy      Pharmacy       @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  productPrices ProductPrice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pharmacyId, name])
+}
+
+model Supplier {
+  id           String   @id @default(uuid())
+  pharmacyId   String
+  code         String
+  name         String
+  taxId        String?
+  phone        String?
+  email        String?
+  address      String?
+  paymentTerms String?
+
+  pharmacy        Pharmacy          @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  purchaseOrders  PurchaseOrder[]
+  purchaseInvoices PurchaseInvoice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pharmacyId, code])
+}
+
+model Customer {
+  id            String    @id @default(uuid())
+  pharmacyId    String
+  code          String
+  fullName      String
+  phone         String?
+  email         String?
+  address       String?
+  birthDate     DateTime? @db.Date
+  loyaltyPoints Int       @default(0)
+
+  pharmacy Pharmacy         @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  sales    Sale[]
+  credits  CustomerCredit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pharmacyId, code])
+}
+
+// ─── Produits & prix & lots ─────────────────────────────────────────────
+
+model Product {
+  id                   String    @id @default(uuid())
+  pharmacyId           String
+  sku                  String
+  barcode              String?
+  name                 String
+  categoryId           String?
+  unit                 String
+  form                 String?
+  requiresPrescription Boolean   @default(false)
+  isActive             Boolean   @default(true)
+  isReturnable         Boolean   @default(true)
+  returnWindowDays     Int?
+
+  pharmacy  Pharmacy        @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  category  Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  batches   ProductBatch[]
+  prices    ProductPrice[]
+  saleLines SaleLine[]
+  stockBalances StockBalance[]
+  stockMovements StockMovement[]
+  purchaseOrderLines PurchaseOrderLine[]
+  purchaseInvoiceLines PurchaseInvoiceLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pharmacyId, sku])
+  @@unique([pharmacyId, barcode])
+  @@index([pharmacyId, name])
+}
+
+model ProductPrice {
+  id            String    @id @default(uuid())
+  productId     String
+  salePrice     Decimal   @db.Decimal(14, 3)
+  purchasePrice Decimal   @db.Decimal(14, 3)
+  taxRateId     String?
+  effectiveFrom DateTime  @default(now())
+
+  product Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  taxRate TaxRate? @relation(fields: [taxRateId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+}
+
+model ProductBatch {
+  id             String    @id @default(uuid())
+  productId      String
+  batchNumber    String
+  expiryDate     DateTime? @db.Date
+  purchaseCost   Decimal   @default(0) @db.Decimal(14, 3)
+
+  product        Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stockBalances  StockBalance[]
+  saleLines      SaleLine[]
+  stockMovements StockMovement[]
+  purchaseInvoiceLines PurchaseInvoiceLine[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([productId, batchNumber])
+}
+
+model Warehouse {
+  id         String   @id @default(uuid())
+  pharmacyId String
+  name       String
+  type       String   @default("main")
+
+  pharmacy       Pharmacy       @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  stockBalances  StockBalance[]
+  stockMovements StockMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pharmacyId, name])
+}
+
+// Stock per warehouse/product/batch
+model StockBalance {
+  id               String    @id @default(uuid())
+  warehouseId      String
+  productId        String
+  batchId          String?
+  quantityOnHand   Decimal   @default(0) @db.Decimal(14, 3)
+  quantityReserved Decimal   @default(0) @db.Decimal(14, 3)
+
+  warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  batch     ProductBatch?  @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([warehouseId, productId, batchId])
+}
+
+model StockMovement {
+  id           String           @id @default(uuid())
+  pharmacyId   String
+  warehouseId  String
+  productId    String
+  batchId      String?
+  movementType StockMovementType
+  qty          Decimal          @db.Decimal(14, 3)
+  unitCost     Decimal          @default(0) @db.Decimal(14, 3)
+  referenceType String?
+  referenceId   String?
+  movedBy       String?
+  movedAt       DateTime         @default(now())
+  note         String?
+
+  pharmacy  Pharmacy      @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  warehouse Warehouse     @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  product   Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batch     ProductBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  mover     User?         @relation("StockMovementMovedBy", fields: [movedBy], references: [id], onDelete: SetNull)
+
+  @@index([pharmacyId, movedAt])
+}
+
+// ─── Achats ────────────────────────────────────────────────────────────
+
+model PurchaseOrder {
+  id          String    @id @default(uuid())
+  pharmacyId String
+  supplierId  String
+  poNumber    String
+  orderDate   DateTime @default(now()) @db.Date
+  expectedDate DateTime? @db.Date
+  status      String   @default("draft")
+  subtotal    Decimal  @default(0) @db.Decimal(14, 3)
+  taxTotal    Decimal  @default(0) @db.Decimal(14, 3)
+  total       Decimal  @default(0) @db.Decimal(14, 3)
+  createdBy   String?
+
+  pharmacy Pharmacy            @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  supplier Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  creator   User?              @relation("PurchaseOrderCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  lines    PurchaseOrderLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pharmacyId, poNumber])
+}
+
+model PurchaseOrderLine {
+  id              String @id @default(uuid())
+  purchaseOrderId String
+  productId       String
+  qty             Decimal @db.Decimal(14, 3)
+  unitPrice       Decimal @db.Decimal(14, 3)
+  taxRate         Decimal @db.Decimal(5, 2)
+  lineTotal       Decimal @db.Decimal(14, 3)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+}
+
+model PurchaseInvoice {
+  id           String @id @default(uuid())
+  pharmacyId String
+  supplierId  String
+  invoiceNumber String
+  invoiceDate DateTime @default(now()) @db.Date
+  dueDate     DateTime? @db.Date
+  status      String   @default("open")
+  subtotal    Decimal  @default(0) @db.Decimal(14, 3)
+  taxTotal    Decimal  @default(0) @db.Decimal(14, 3)
+  total       Decimal  @default(0) @db.Decimal(14, 3)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  lines PurchaseInvoiceLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([pharmacyId, invoiceNumber])
+}
+
+model PurchaseInvoiceLine {
+  id                 String @id @default(uuid())
+  purchaseInvoiceId  String
+  productId          String
+  batchId            String?
+  qty                Decimal @db.Decimal(14, 3)
+  unitCost           Decimal @db.Decimal(14, 3)
+  taxRate            Decimal @db.Decimal(5, 2)
+  lineTotal          Decimal @db.Decimal(14, 3)
+
+  purchaseInvoice PurchaseInvoice @relation(fields: [purchaseInvoiceId], references: [id], onDelete: Cascade)
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batch           ProductBatch?    @relation(fields: [batchId], references: [id], onDelete: SetNull)
+}
+
+// ─── Caisse / ventes ───────────────────────────────────────────────────
+
+model Register {
+  id         String @id @default(uuid())
+  pharmacyId String
+  name       String
+  isActive   Boolean @default(true)
+
+  pharmacy     Pharmacy       @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  sessions     CashSession[]
+  sales        Sale[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([pharmacyId, name])
+}
+
+model CashSession {
+  id             String @id @default(uuid())
+  registerId     String
+  openedBy       String?
+  openedAt       DateTime @default(now())
+  openingAmount  Decimal @default(0) @db.Decimal(14, 3)
+  closedBy       String?
+  closedAt       DateTime?
+  closingAmount Decimal? @db.Decimal(14, 3)
+  variance      Decimal? @db.Decimal(14, 3)
+
+  register Register @relation(fields: [registerId], references: [id], onDelete: Cascade)
+}
+
+model Sale {
+  id            String       @id @default(uuid())
+  pharmacyId    String
+  registerId    String?
+  saleNumber    String
+  saleDate      DateTime     @default(now())
+  customerId    String?
+  cashierId    String?
+  status       SaleStatus   @default(completed)
+  paymentStatus PaymentStatus @default(paid)
+
+  subtotal      Decimal @default(0) @db.Decimal(14, 3)
+  discountTotal Decimal @default(0) @db.Decimal(14, 3)
+  taxTotal      Decimal @default(0) @db.Decimal(14, 3)
+  total         Decimal @default(0) @db.Decimal(14, 3)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  register Register? @relation(fields: [registerId], references: [id], onDelete: SetNull)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  cashier  User?     @relation("SaleCashier", fields: [cashierId], references: [id], onDelete: SetNull)
+
+  lines    SaleLine[]
+  payments SalePayment[]
+  returns  SaleReturn[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([pharmacyId, saleNumber])
+  @@index([pharmacyId, saleDate])
+}
+
+model SaleLine {
+  id          String @id @default(uuid())
+  saleId      String
+  productId   String
+  batchId     String?
+  qty         Decimal @db.Decimal(14, 3)
+  unitPrice   Decimal @db.Decimal(14, 3)
+  discount    Decimal @default(0) @db.Decimal(14, 3)
+  taxRate     Decimal @default(0) @db.Decimal(5, 2)
+  lineTotal   Decimal @db.Decimal(14, 3)
+
+  sale         Sale               @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product      Product            @relation(fields: [productId], references: [id], onDelete: Restrict)
+  batch        ProductBatch?      @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  returnLines  SaleReturnLine[]
+
+  @@index([saleId])
+}
+
+model SalePayment {
+  id            String @id @default(uuid())
+  saleId        String
+  paymentMethod String
+  amount        Decimal @db.Decimal(14, 3)
+  paidAt        DateTime @default(now())
+  reference     String?
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+}
+
+model SaleReturn {
+  id                     String           @id @default(uuid())
+  pharmacyId             String
+  saleId                  String
+  returnNumber           String
+  returnDate             DateTime         @default(now())
+  total                  Decimal          @db.Decimal(14, 3)
+  reason                 String?
+
+  refundMethod           RefundMethod?
+  status                 SaleReturnStatus @default(pending_approval)
+  restockingFeePercent   Decimal          @default(0) @db.Decimal(5, 2)
+  restockingFeeAmount    Decimal          @default(0) @db.Decimal(14, 3)
+
+  createdBy              String?
+  approvedBy             String?
+  approvalNote           String?
+  refundedBy             String?
+  refundedAt             DateTime?
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  sale      Sale @relation(fields: [saleId], references: [id], onDelete: Restrict)
+
+  creator  User? @relation("SaleReturnCreatedBy", fields: [createdBy], references: [id], onDelete: SetNull)
+  approved User? @relation("SaleReturnApprovedBy", fields: [approvedBy], references: [id], onDelete: SetNull)
+  refunder User? @relation("SaleReturnRefundedBy", fields: [refundedBy], references: [id], onDelete: SetNull)
+
+  lines   SaleReturnLine[]
+  credits CustomerCredit[]
+
+  @@unique([pharmacyId, returnNumber])
+  @@index([saleId])
+  @@index([pharmacyId, status])
+}
+
+model SaleReturnLine {
+  id            String           @id @default(uuid())
+  saleReturnId  String
+  saleLineId    String
+  qty           Decimal           @db.Decimal(14, 3)
+  condition     ReturnCondition   @default(resellable)
+  reason        String?
+
+  saleReturn SaleReturn @relation(fields: [saleReturnId], references: [id], onDelete: Cascade)
+  saleLine    SaleLine  @relation(fields: [saleLineId], references: [id], onDelete: Restrict)
+}
+
+model CustomerCredit {
+  id           String   @id @default(uuid())
+  pharmacyId    String
+  customerId    String
+  saleReturnId  String?
+  amount        Decimal @db.Decimal(14, 3)
+  remaining     Decimal @db.Decimal(14, 3)
+  expiresAt     DateTime?
+
+  pharmacy   Pharmacy   @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  saleReturn SaleReturn? @relation(fields: [saleReturnId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([pharmacyId, customerId])
+  @@index([customerId, remaining])
+}
+
+// ─── Finance léger ─────────────────────────────────────────────────────
+
+model CashAccount {
+  id         String @id @default(uuid())
+  pharmacyId String
+  name       String
+  currency   String @default("TND")
+  isDefault  Boolean @default(false)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([pharmacyId, name])
+}
+
+model BankAccount {
+  id            String @id @default(uuid())
+  pharmacyId    String
+  bankName      String
+  ibanOrRib    String?
+  accountNumber String?
+  currency      String @default("TND")
+  isDefault     Boolean @default(false)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+model FinanceTransaction {
+  id            String           @id @default(uuid())
+  pharmacyId    String
+  accountType   FinanceAccountType
+  accountId     String
+  txnDate       DateTime         @default(now())
+  txnType       FinanceTxnType
+  category      String?
+  amount        Decimal          @db.Decimal(14, 3)
+  referenceType String?
+  referenceId   String?
+  note          String?
+
+  pharmacy   Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  createdBy  String?
+  creator    User?    @relation("FinanceTxnCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([pharmacyId, txnDate])
+}
+
+// ─── Comptabilité (squelette) ──────────────────────────────────────────
+
+model ChartOfAccounts {
+  id          String   @id @default(uuid())
+  pharmacyId String
+  code       String
+  label      String
+  accountType String
+  parentId   String?
+  isActive   Boolean  @default(true)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  parent ChartOfAccounts? @relation("CoaHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children ChartOfAccounts[] @relation("CoaHierarchy")
+  journalLines JournalEntryLine[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([pharmacyId, code])
+}
+
+model JournalEntry {
+  id          String   @id @default(uuid())
+  pharmacyId String
+  journalCode String
+  entryDate   DateTime @default(now()) @db.Date
+  reference   String?
+  memo        String?
+  postedAt    DateTime @default(now())
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  lines JournalEntryLine[]
+
+  createdAt DateTime @default(now())
+}
+
+model JournalEntryLine {
+  id            String @id @default(uuid())
+  journalEntryId String
+  accountId      String
+  partnerType   String?
+  partnerId     String?
+  debit         Decimal @default(0) @db.Decimal(14, 3)
+  credit        Decimal @default(0) @db.Decimal(14, 3)
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      ChartOfAccounts @relation(fields: [accountId], references: [id], onDelete: Restrict)
+}
+
+// ─── TVA / déclarations ────────────────────────────────────────────────
+
+model TaxPeriod {
+  id         String           @id @default(uuid())
+  pharmacyId String
+  periodStart DateTime       @db.Date
+  periodEnd   DateTime       @db.Date
+  status      TaxPeriodStatus @default(open)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  declarations VatDeclaration[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([pharmacyId, periodStart, periodEnd])
+}
+
+model VatDeclaration {
+  id           String @id @default(uuid())
+  pharmacyId   String
+  taxPeriodId  String
+  taxableSales Decimal @default(0) @db.Decimal(14, 3)
+  outputVat    Decimal @default(0) @db.Decimal(14, 3)
+  inputVat     Decimal @default(0) @db.Decimal(14, 3)
+  netVat       Decimal @default(0) @db.Decimal(14, 3)
+  generatedAt  DateTime @default(now())
+  status       VatDeclarationStatus @default(draft)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  taxPeriod TaxPeriod @relation(fields: [taxPeriodId], references: [id], onDelete: Cascade)
+
+  @@unique([pharmacyId, taxPeriodId])
+}
+
+// ─── Sauvegardes / sync / audit ───────────────────────────────────────
+
+model BackupProfile {
+  id               String @id @default(uuid())
+  pharmacyId String
+  mode             String
+  localPath        String?
+  cloudProvider    String?
+  cloudBucket      String?
+  encryptionEnabled Boolean @default(true)
+  scheduleCron      String?
+  isActive           Boolean @default(true)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  runs     BackupRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BackupRun {
+  id         String @id @default(uuid())
+  profileId String
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  status    String
+  sizeBytes BigInt?
+  location  String?
+  errorMsg  String?
+
+  profile BackupProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model SyncJob {
+  id           String @id @default(uuid())
+  pharmacyId   String
+  direction    String
+  startedAt    DateTime @default(now())
+  finishedAt   DateTime?
+  status       String
+  conflictCount Int @default(0)
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  conflicts SyncConflict[]
+}
+
+model SyncConflict {
+  id          String @id @default(uuid())
+  syncJobId   String
+  entityName String
+  entityId    String
+  localVersion Json
+  cloudVersion Json
+  resolutionStrategy String?
+  resolvedBy  String?
+  resolvedAt DateTime?
+
+  syncJob SyncJob @relation(fields: [syncJobId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id           String @id @default(uuid())
+  pharmacyId   String
+  userId       String?
+  action       String
+  entity       String
+  entityId     String?
+  oldValues    Json?
+  newValues    Json?
+  ipAddress    String?
+
+  pharmacy Pharmacy @relation(fields: [pharmacyId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([pharmacyId, createdAt])
+}

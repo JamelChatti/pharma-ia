@@ -1,0 +1,125 @@
+{
+  "info": {
+    "_postman_id": "89e70c1f-f39d-45db-a314-7bdcbb2e8896",
+    "name": "Pharma IA Minimal Flow",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1) Auth Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200/201', function () {",
+              "  pm.expect([200, 201]).to.include(pm.response.code);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json.accessToken) pm.collectionVariables.set('token', json.accessToken);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        }
+      }
+    },
+    {
+      "name": "2) Create Sale",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200/201', function () {",
+              "  pm.expect([200, 201]).to.include(pm.response.code);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json.id) pm.collectionVariables.set('saleId', json.id);",
+              "if (json.lines && json.lines.length > 0 && json.lines[0].id) {",
+              "  pm.collectionVariables.set('saleLineId', json.lines[0].id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"warehouseId\": \"{{warehouseId}}\",\n  \"customerId\": \"{{customerId}}\",\n  \"lines\": [\n    {\n      \"productId\": \"{{productId}}\",\n      \"qty\": 1\n    }\n  ],\n  \"payments\": [\n    {\n      \"paymentMethod\": \"cash\",\n      \"amount\": 5\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/sales",
+          "host": ["{{baseUrl}}"],
+          "path": ["sales"]
+        }
+      }
+    },
+    {
+      "name": "3) Create Return",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200/201', function () {",
+              "  pm.expect([200, 201]).to.include(pm.response.code);",
+              "});",
+              "const json = pm.response.json();",
+              "if (json.id) pm.collectionVariables.set('returnId', json.id);",
+              "if (json.status) pm.collectionVariables.set('returnStatus', json.status);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"lines\": [\n    {\n      \"saleLineId\": \"{{saleLineId}}\",\n      \"qty\": 1,\n      \"condition\": \"resellable\"\n    }\n  ],\n  \"reason\": \"Retour minimal Postman\",\n  \"refundMethod\": \"cash\",\n  \"cashAccountId\": \"{{cashAccountId}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/sales/{{saleId}}/returns",
+          "host": ["{{baseUrl}}"],
+          "path": ["sales", "{{saleId}}", "returns"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "token", "value": "" },
+    { "key": "warehouseId", "value": "" },
+    { "key": "customerId", "value": "" },
+    { "key": "productId", "value": "" },
+    { "key": "cashAccountId", "value": "" },
+    { "key": "saleId", "value": "" },
+    { "key": "saleLineId", "value": "" },
+    { "key": "returnId", "value": "" },
+    { "key": "returnStatus", "value": "" }
+  ]
+}
