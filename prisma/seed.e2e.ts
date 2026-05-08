@@ -16,6 +16,19 @@ if (!url?.trim()) {
 const pool = new Pool({ connectionString: url.trim() });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
+const FIXED_IDS = {
+  tenantId: "11111111-1111-4111-8111-111111111111",
+  pharmacyId: "22222222-2222-4222-8222-222222222222",
+  userId: "33333333-3333-4333-8333-333333333333",
+  warehouseId: "44444444-4444-4444-8444-444444444444",
+  customerId: "55555555-5555-4555-8555-555555555555",
+  productId: "66666666-6666-4666-8666-666666666666",
+  batchId: "77777777-7777-4777-8777-777777777777",
+  cashAccountId: "88888888-8888-4888-8888-888888888888",
+  saleId: "99999999-9999-4999-8999-999999999999",
+  saleLineId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+} as const;
+
 async function wipe() {
   await prisma.auditLog.deleteMany({});
   await prisma.financeTransaction.deleteMany({});
@@ -94,11 +107,17 @@ async function main() {
   });
 
   const tenant = await prisma.tenant.create({
-    data: { name: "Tenant E2E", plan: "starter", status: "active" },
+    data: {
+      id: FIXED_IDS.tenantId,
+      name: "Tenant E2E",
+      plan: "starter",
+      status: "active",
+    },
   });
 
   const pharmacy = await prisma.pharmacy.create({
     data: {
+      id: FIXED_IDS.pharmacyId,
       tenantId: tenant.id,
       legalName: "Pharmacie E2E SARL",
       tradeName: "Pharmacie E2E",
@@ -120,6 +139,7 @@ async function main() {
   const passwordHash = await bcrypt.hash("Admin@123", 10);
   const admin = await prisma.user.create({
     data: {
+      id: FIXED_IDS.userId,
       pharmacyId: pharmacy.id,
       fullName: "Admin E2E",
       email: "admin@pharmacie.tn",
@@ -143,6 +163,7 @@ async function main() {
 
   const warehouse = await prisma.warehouse.create({
     data: {
+      id: FIXED_IDS.warehouseId,
       pharmacyId: pharmacy.id,
       name: "Dépôt Principal",
       type: "main",
@@ -151,6 +172,7 @@ async function main() {
 
   await prisma.cashAccount.create({
     data: {
+      id: FIXED_IDS.cashAccountId,
       pharmacyId: pharmacy.id,
       name: "Caisse Principale",
       currency: "TND",
@@ -160,6 +182,7 @@ async function main() {
 
   const customer = await prisma.customer.create({
     data: {
+      id: FIXED_IDS.customerId,
       pharmacyId: pharmacy.id,
       code: "CLI-E2E-001",
       fullName: "Client Test E2E",
@@ -169,6 +192,7 @@ async function main() {
 
   const product = await prisma.product.create({
     data: {
+      id: FIXED_IDS.productId,
       pharmacyId: pharmacy.id,
       sku: "SKU-E2E-001",
       barcode: "6190000000011",
@@ -182,6 +206,7 @@ async function main() {
 
   const batch = await prisma.productBatch.create({
     data: {
+      id: FIXED_IDS.batchId,
       productId: product.id,
       batchNumber: "LOT-E2E-001",
       expiryDate: new Date("2027-12-31"),
@@ -217,8 +242,9 @@ async function main() {
 
   const sale = await prisma.sale.create({
     data: {
+      id: FIXED_IDS.saleId,
       pharmacyId: pharmacy.id,
-      saleNumber: `SALE-E2E-${Date.now()}`,
+      saleNumber: "SALE-E2E-0001",
       customerId: customer.id,
       cashierId: admin.id,
       status: "completed",
@@ -230,6 +256,7 @@ async function main() {
       lines: {
         create: [
           {
+            id: FIXED_IDS.saleLineId,
             productId: product.id,
             batchId: batch.id,
             qty,
@@ -284,6 +311,8 @@ async function main() {
   console.log("pharmacyId:", pharmacy.id);
   console.log("saleId:", sale.id);
   console.log("saleLineId:", sale.lines[0].id);
+  console.log("warehouseId:", warehouse.id);
+  console.log("productId:", product.id);
   console.log("customerId:", customer.id);
   console.log("cashAccountId:", cashAccount.id);
 }
