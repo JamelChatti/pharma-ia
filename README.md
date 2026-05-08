@@ -11,6 +11,7 @@ Backend NestJS + Prisma pour le flux ventes/retours pharmacie.
 
 ```bash
 npm install
+cp .env.example .env
 docker compose up -d db
 npx prisma db push
 npm run seed:e2e
@@ -29,7 +30,8 @@ Le projet utilise au minimum:
 - `JWT_ACCESS_EXPIRES_IN`
 - `JWT_REFRESH_EXPIRES_IN`
 
-Un fichier `.env` d'exemple est deja present pour le mode local.
+Un fichier `.env.example` est versionne pour le mode local.
+Sous Windows PowerShell, utilise plutot: `Copy-Item .env.example .env`.
 
 ## Scripts utiles
 
