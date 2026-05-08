@@ -74,3 +74,7 @@ Ce job:
 5. execute le flow Postman via Newman.
 
 Le but est de detecter rapidement les regressions du flux Auth/Vente/Retour sur chaque push/PR.
+
+## Runbooks
+
+- Release checklist: `docs/release-checklist.md`
